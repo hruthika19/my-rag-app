@@ -1,0 +1,7 @@
+streamlit
+pdfplumber
+langchain-core
+sentence-transformers
+chromadb
+ollama
+cross-encoder
