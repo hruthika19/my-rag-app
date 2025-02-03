@@ -1,14 +1,15 @@
 import os
 
 import streamlit as st
-import pdfplumber
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-import chromadb
-from chromadb.utils.embedding_functions.ollama_embedding_function import OllamaEmbeddingFunction
+import chromadb 
 import ollama
+from chromadb.utils.embedding_functions.ollama_embedding_function import OllamaEmbeddingFunction
+
 
 system_prompt=""" 
 You are an AI assistant tasked with providing detailed answers based solely on the given context. Your goal is to analyze the information provided and formulate a comprehensive, well-structured response to the question.
@@ -23,7 +24,7 @@ To answer the question:
 4. Ensure your answer is comprehensive, covering all relevant aspects found in the context.
 5. If there is any need of mathematical calculation regarding the question relavent to context, answer precisely.
 6. If the information in the question is not related to the context, re-read the question carefully and answer contextually.
-7. When there is a date given, analyze the calendar of the current year correctly to answer.  
+7. When there is a date given, analyze the calendar of the current year correctly to provide the answer.  
 
 Format your response as follows:
 1. Use clear, concise language.
@@ -35,34 +36,24 @@ Format your response as follows:
 Important: Base your entire response solely on the information provided in the context. Do not include any external knowledge or assumptions not present in the given text.
 """
 
+# def calculate_weekday(date_str: str) -> str:
+#     # Parse the date string and calculate the weekday
+#     date_obj = datetime.datetime.strptime(date_str, "%d %B %Y")
+#     return date_obj.strftime("%A")
+
 def process_documents(file_paths: list[str]) -> list[Document]:
     all_docs = []
-    
     for file_path in file_paths:
-        with pdfplumber.open(file_path) as pdf:
-            extracted_text = ""
-            for page in pdf.pages:
-                text = page.extract_text()
-                tables = page.extract_tables()
-                
-                if text:
-                    extracted_text += text + "\n\n"
-                
-                if tables:
-                    for table in tables:
-                        table_text = "\n".join(["\t".join(cell if cell is not None else "" for cell in row) for row in table])
-                        extracted_text += "\n[Table Extracted]\n" + table_text + "\n"
-
-            doc = Document(page_content=extracted_text, metadata={"source": file_path})
-            all_docs.append(doc)
-
+        loader = PyMuPDFLoader(file_path)
+        docs = loader.load()
+        all_docs.extend(docs)
+    
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=400,
         chunk_overlap=100,
         separators=["\n\n", "\n", ".", "?", "!", " ", ""],
     )
     return text_splitter.split_documents(all_docs)
-
 
 def get_vector_collection() -> chromadb.Collection:
     ollama_ef = OllamaEmbeddingFunction(
