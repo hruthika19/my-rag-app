@@ -206,86 +206,87 @@ if __name__ == "__main__":
     
     if user_query:
         if st.session_state.uploaded_files_dict:
-            with st.spinner("Searching and generating response..."):
-                try:
-                    results = query_collection(user_query)
-                    if results and results['documents'] and results['documents'][0]:
-                        relevant_text, relevant_text_ids = re_rank_cross_encoders(user_query, results['documents'][0])
-                        
-                        encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-                        
-                        response_container = st.empty()
-                        response_text = ""
-                        
-                        for response_chunk in call_llm(relevant_text, user_query):
-                            response_text += response_chunk
-                            response_container.markdown(response_text)
-                        
-                        if not response_text:
-                            st.error("No response generated. Please try again.")
-                        else:
-                            st.write("---")
-                            st.subheader("Source Documents")
+            if st.button("Generate Answer"):
+                with st.spinner("Searching and generating response..."):
+                    try:
+                        results = query_collection(user_query)
+                        if results and results['documents'] and results['documents'][0]:
+                            relevant_text, relevant_text_ids = re_rank_cross_encoders(user_query, results['documents'][0])
                             
-                            relevant_chunks = [results['documents'][0][idx] for idx in relevant_text_ids]
+                            encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
                             
-                            all_relevant_sentences = []
-                            chunks_to_highlight = []
+                            response_container = st.empty()
+                            response_text = ""
                             
-                            for chunk in relevant_chunks:
-                                relevant_sentences = get_relevant_sentences(chunk, user_query, encoder_model)
-                                if relevant_sentences:
-                                    all_relevant_sentences.extend(relevant_sentences)
-                                else:
-                                    chunks_to_highlight.append(chunk)
+                            for response_chunk in call_llm(relevant_text, user_query):
+                                response_text += response_chunk
+                                response_container.markdown(response_text)
                             
-                            displayed_pages = set()
-                            
-                            for idx, (doc_text, metadata) in enumerate(zip(results['documents'][0], results['metadatas'][0])):
-                                try:
-                                    source_file = metadata.get('source_file', '')
-                                    file_name = Path(source_file).name
-                                    page_number = metadata.get('page_number', 0)
-                                    
-                                    page_id = f"{file_name}_{page_number}"
-                                    
-                                    if page_id in displayed_pages:
-                                        continue
-                                    
-                                    if file_name in st.session_state.uploaded_files_dict:
-                                        pdf_path = st.session_state.uploaded_files_dict[file_name]
+                            if not response_text:
+                                st.error("No response generated. Please try again.")
+                            else:
+                                st.write("---")
+                                st.subheader("Source Documents")
+                                
+                                relevant_chunks = [results['documents'][0][idx] for idx in relevant_text_ids]
+                                
+                                all_relevant_sentences = []
+                                chunks_to_highlight = []
+                                
+                                for chunk in relevant_chunks:
+                                    relevant_sentences = get_relevant_sentences(chunk, user_query, encoder_model)
+                                    if relevant_sentences:
+                                        all_relevant_sentences.extend(relevant_sentences)
+                                    else:
+                                        chunks_to_highlight.append(chunk)
+                                
+                                displayed_pages = set()
+                                
+                                for idx, (doc_text, metadata) in enumerate(zip(results['documents'][0], results['metadatas'][0])):
+                                    try:
+                                        source_file = metadata.get('source_file', '')
+                                        file_name = Path(source_file).name
+                                        page_number = metadata.get('page_number', 0)
                                         
-                                        st.write(f"Source: {file_name}, Page {page_number + 1}")
+                                        page_id = f"{file_name}_{page_number}"
                                         
-                                        try:
-                                            doc = fitz.open(pdf_path)
-                                            page = doc[page_number]
+                                        if page_id in displayed_pages:
+                                            continue
+                                        
+                                        if file_name in st.session_state.uploaded_files_dict:
+                                            pdf_path = st.session_state.uploaded_files_dict[file_name]
                                             
-                                            for sentence in all_relevant_sentences:
-                                                areas = page.search_for(sentence.strip())
-                                                for rect in areas:
-                                                    highlight = page.add_highlight_annot(rect)
-                                                    highlight.update()
+                                            st.write(f"Source: {file_name}, Page {page_number + 1}")
                                             
-                                            for chunk in chunks_to_highlight:
-                                                areas = page.search_for(chunk.strip())
-                                                for rect in areas:
-                                                    highlight = page.add_highlight_annot(rect)
-                                                    highlight.update()
-                                            
-                                            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                                            img_bytes = pix.tobytes("png")
-                                            
-                                            st.image(img_bytes, use_column_width=True)
-                                            
-                                            doc.close()
-                                            
-                                            displayed_pages.add(page_id)
-                                        except Exception as e:
-                                            st.error(f"Error displaying page {page_number + 1} from {file_name}: {str(e)}")
-                                except Exception as e:
-                                    st.error(f"Error processing source document {idx + 1}: {str(e)}")
-                except Exception as e:
-                    st.error(f"Error generating response: {str(e)}")
+                                            try:
+                                                doc = fitz.open(pdf_path)
+                                                page = doc[page_number]
+                                                
+                                                for sentence in all_relevant_sentences:
+                                                    areas = page.search_for(sentence.strip())
+                                                    for rect in areas:
+                                                        highlight = page.add_highlight_annot(rect)
+                                                        highlight.update()
+                                                
+                                                for chunk in chunks_to_highlight:
+                                                    areas = page.search_for(chunk.strip())
+                                                    for rect in areas:
+                                                        highlight = page.add_highlight_annot(rect)
+                                                        highlight.update()
+                                                
+                                                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                                                img_bytes = pix.tobytes("png")
+                                                
+                                                st.image(img_bytes, use_container_width=True)
+                                                
+                                                doc.close()
+                                                
+                                                displayed_pages.add(page_id)
+                                            except Exception as e:
+                                                st.error(f"Error displaying page {page_number + 1} from {file_name}: {str(e)}")
+                                    except Exception as e:
+                                        st.error(f"Error processing source document {idx + 1}: {str(e)}")
+                    except Exception as e:
+                        st.error(f"An error occurred: {str(e)}")
         else:
             st.warning("Please upload and process some documents first.")
