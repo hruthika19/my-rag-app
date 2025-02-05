@@ -9,6 +9,7 @@ import chromadb
 from chromadb.utils.embedding_functions import OllamaEmbeddingFunction
 import re
 import fitz
+import ollama
 
 def process_documents(file_paths: list[str]) -> list[Document]:
     all_docs = []
@@ -69,7 +70,14 @@ def re_rank_cross_encoders(prompt: str, documents: list[str]):
     model = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
     pairs = [[prompt, doc] for doc in documents]
     scores = model.predict(pairs)
-    return sorted(list(zip(documents, scores)), key=lambda x: x[1], reverse=True)
+    
+    scored_pairs = list(enumerate(scores))
+    sorted_pairs = sorted(scored_pairs, key=lambda x: x[1], reverse=True)
+    top_indices = [idx for idx, _ in sorted_pairs[:3]]
+    
+    relevant_text = " ".join([documents[idx] for idx in top_indices])
+    
+    return relevant_text, top_indices
 
 def get_relevant_sentences(text: str, query: str, encoder_model: CrossEncoder, threshold: float = 0.5):
     sentences = [s.strip() for s in re.split('[.!?]', text) if s.strip()]
@@ -117,20 +125,24 @@ def extract_query_terms(query: str):
 def call_llm(context: str, prompt: str):
     with open('system_prompt.txt', 'r') as f:
         system_prompt = f.read()
+    
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt
+        },
+        {
+            "role": "user",
+            "content": f"Context: {context}\n\nQuestion: {prompt}"
+        }
+    ]
+    
     response = ollama.chat(
         model="llama3.2",
-        stream=True,
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt, 
-            },
-            {
-                "role": "user",
-                "content": f"Context: {context}, Question: {prompt}",
-            },
-        ],
+        messages=messages,
+        stream=True
     )
+    
     for chunk in response:
         if 'message' in chunk and 'content' in chunk['message']:
             yield chunk['message']['content']
@@ -149,28 +161,23 @@ if __name__ == "__main__":
     st.markdown("""
         <style>
         .highlight-container {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 1rem;
-            margin: 1rem 0;
-            background-color: #ffffff;
-        }
-        mark {
-            background-color: #ffeb3b;
-            padding: 0.1em 0.2em;
-            border-radius: 3px;
-        }
-        .source-image {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
+            border: 2px solid #f63366;
+            padding: 10px;
             margin: 10px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 5px;
         }
-        .source-container {
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 4px;
-            margin: 1rem 0;
+        .source-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .response-text {
+            font-size: 1.1em;
+            line-height: 1.5;
+            padding: 10px;
+            background-color: #f0f2f6;
+            border-radius: 5px;
+            margin: 10px 0;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -185,35 +192,34 @@ if __name__ == "__main__":
                     for uploaded_file in uploaded_files:
                         temp_path = temp_dir / uploaded_file.name
                         with open(temp_path, "wb") as f:
-                            f.write(uploaded_file.getvalue())
+                            f.write(uploaded_file.getbuffer())
                         st.session_state.uploaded_files_dict[uploaded_file.name] = str(temp_path)
                     
                     docs = process_documents([str(p) for p in temp_dir.glob("*.pdf")])
                     if docs:
                         add_to_vector_collection(docs, [f.name for f in uploaded_files])
-                        st.success("Database updated successfully!")
+                        st.success("Documents processed successfully!")
                 except Exception as e:
                     st.error(f"Error processing documents: {str(e)}")
     
     user_query = st.text_input("Enter your question:")
     
     if user_query:
-        if st.button("Get Answer"):
+        if st.session_state.uploaded_files_dict:
             with st.spinner("Searching and generating response..."):
                 try:
                     results = query_collection(user_query)
                     if results and results['documents'] and results['documents'][0]:
-                        relavent_text, relavent_text_ids = re_rank_cross_encoders(user_query, results['documents'][0])
+                        relevant_text, relevant_text_ids = re_rank_cross_encoders(user_query, results['documents'][0])
                         
                         encoder_model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
                         
                         response_container = st.empty()
                         response_text = ""
                         
-                        for chunk in call_llm(relavent_text, user_query):
-                            if chunk:
-                                response_text += chunk
-                                response_container.markdown(response_text)
+                        for response_chunk in call_llm(relevant_text, user_query):
+                            response_text += response_chunk
+                            response_container.markdown(response_text)
                         
                         if not response_text:
                             st.error("No response generated. Please try again.")
@@ -221,10 +227,10 @@ if __name__ == "__main__":
                             st.write("---")
                             st.subheader("Source Documents")
                             
-                            relevant_chunks = [results['documents'][0][idx] for idx in relavent_text_ids]
+                            relevant_chunks = [results['documents'][0][idx] for idx in relevant_text_ids]
                             
                             all_relevant_sentences = []
-                            chunks_to_highlight = []  
+                            chunks_to_highlight = []
                             
                             for chunk in relevant_chunks:
                                 relevant_sentences = get_relevant_sentences(chunk, user_query, encoder_model)
@@ -249,7 +255,9 @@ if __name__ == "__main__":
                                     if file_name in st.session_state.uploaded_files_dict:
                                         pdf_path = st.session_state.uploaded_files_dict[file_name]
                                         
-                                        with st.expander(f"Source: {file_name}, Page {page_number + 1}"):
+                                        st.write(f"Source: {file_name}, Page {page_number + 1}")
+                                        
+                                        try:
                                             doc = fitz.open(pdf_path)
                                             page = doc[page_number]
                                             
@@ -268,15 +276,16 @@ if __name__ == "__main__":
                                             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
                                             img_bytes = pix.tobytes("png")
                                             
-                                            st.markdown("#### Original Document")
-                                            st.image(img_bytes, caption=f"Page {page_number + 1}", use_container_width=True)
+                                            st.image(img_bytes, use_column_width=True)
                                             
                                             doc.close()
                                             
                                             displayed_pages.add(page_id)
+                                        except Exception as e:
+                                            st.error(f"Error displaying page {page_number + 1} from {file_name}: {str(e)}")
                                 except Exception as e:
-                                    st.error(f"Error displaying source document {idx + 1}: {str(e)}")
-                                    continue
+                                    st.error(f"Error processing source document {idx + 1}: {str(e)}")
                 except Exception as e:
-                    st.error(f"Error processing query: {str(e)}")
-                    st.error("Full error:", exc_info=True)
+                    st.error(f"Error generating response: {str(e)}")
+        else:
+            st.warning("Please upload and process some documents first.")
