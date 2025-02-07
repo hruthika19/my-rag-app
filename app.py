@@ -233,13 +233,21 @@ if __name__ == "__main__":
                                 all_relevant_sentences = []
                                 chunks_to_highlight = []
                                 
+                                # # First display the extracted text that will be highlighted
+                                # st.write("📌 Relevant text being highlighted:")
                                 for chunk in relevant_chunks:
                                     relevant_sentences = get_relevant_sentences(chunk, user_query, encoder_model)
                                     if relevant_sentences:
                                         all_relevant_sentences.extend(relevant_sentences)
+                                        # Display the relevant sentences in a formatted way
+                                        # for sentence in relevant_sentences:
+                                        #     st.markdown(f"* {sentence}", unsafe_allow_html=True)
                                     else:
                                         chunks_to_highlight.append(chunk)
-                                
+                                        # Display the chunks that will be highlighted
+                                        # st.markdown(f"* {chunk}", unsafe_allow_html=True)
+
+
                                 displayed_pages = set()
                                 
                                 for idx, (doc_text, metadata) in enumerate(zip(results['documents'][0], results['metadatas'][0])):
@@ -256,20 +264,22 @@ if __name__ == "__main__":
                                         if file_name in st.session_state.uploaded_files_dict:
                                             pdf_path = st.session_state.uploaded_files_dict[file_name]
                                             
-                                            st.write(f"Source: {file_name}, Page {page_number + 1}")
+                                            # st.write(f"Source: {file_name}, Page {page_number + 1}")
                                             
                                             try:
                                                 doc = fitz.open(pdf_path)
                                                 page = doc[page_number]
                                                 
+                                                # Highlight relevant sentences
                                                 for sentence in all_relevant_sentences:
-                                                    areas = page.search_for(sentence.strip())
+                                                    areas = find_text_locations(pdf_path, page_number, sentence.strip())
                                                     for rect in areas:
                                                         highlight = page.add_highlight_annot(rect)
                                                         highlight.update()
                                                 
+                                                # Highlight chunks
                                                 for chunk in chunks_to_highlight:
-                                                    areas = page.search_for(chunk.strip())
+                                                    areas = find_text_locations(pdf_path, page_number, chunk.strip())
                                                     for rect in areas:
                                                         highlight = page.add_highlight_annot(rect)
                                                         highlight.update()
@@ -289,4 +299,4 @@ if __name__ == "__main__":
                     except Exception as e:
                         st.error(f"An error occurred: {str(e)}")
         else:
-            st.warning("Please upload and process some documents first.")
+            st.warning("Please upload and process some documents first.") 

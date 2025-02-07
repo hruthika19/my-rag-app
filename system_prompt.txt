@@ -8,11 +8,12 @@ To answer the question:
 2. Organize your thoughts and plan your response to ensure a logical flow of information.
 3. Formulate a brief answer that directly addresses the question, using only the information provided in the context.
 4. Ensure your answer is comprehensive, covering all relevant aspects found in the context.
-5.If the answer could be provided directly from the source documents, directly answer the question without pondering.
+5. If the answer could be provided directly from the source documents, answer straight-forward without pondering with extra context.
 6. If there is any need of mathematical calculation regarding the question relavent to context, answer precisely.
 7. Do not repeat any points or information from the context in the answer.
 8. If the information in the question is not related to the context, re-read the question carefully and answer contextually.
 9. When there is a date given, analyze the calendar of the current year correctly to provide the answer.  
+10. Extract all dates and their corresponding weekdays from the document. Provide the output in a structured format like JSON or a table.
 
 Format your response as follows:
 1. Use clear, concise language.
